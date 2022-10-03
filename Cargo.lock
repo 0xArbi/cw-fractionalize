@@ -212,7 +212,6 @@ dependencies = [
  "protobuf",
  "schemars",
  "serde",
- "sg-std",
  "sg721",
  "sg721-base",
  "thiserror",

@@ -6,7 +6,7 @@ use cosmwasm_std::{
     ReplyOn, Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
 use cw2::set_contract_version;
-use cw20::Cw20ReceiveMsg;
+use cw20::{Cw20ReceiveMsg, Cw20Coin};
 use cw721::Cw721ReceiveMsg;
 use protobuf::Message;
 
@@ -208,18 +208,15 @@ pub fn getCw20Address(
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Sub;
-
     use super::*;
     use cosmwasm_std::{
-        testing::{mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage},
+        testing::{mock_dependencies, mock_env, mock_info, MockApi, MockQuerier},
         Addr, Api, Empty, MemoryStorage, OwnedDeps,
     };
     use cw20::Cw20QueryMsg;
     use cw721::Cw721QueryMsg;
-    use cw721::{Cw721Query, Expiration};
     use cw721::{NumTokensResponse, OwnerOfResponse};
-    use cw721_base::{Cw721Contract, Extension};
+    use cw721_base::{Extension};
     use cw_multi_test::{App, AppResponse, BankKeeper, Contract, ContractWrapper, Executor};
 
     pub fn nft_owner_of(router: &mut App, collection: String, token_id: String) -> String {
