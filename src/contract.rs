@@ -94,29 +94,40 @@ pub fn fractionalize(
     CONFIG.save(
         deps.storage,
         &Config {
-            last_nft_fractionalized: (collection_address, token_id),
+            last_nft_fractionalized: (collection_address.clone(), token_id.clone()),
         },
     );
 
-    Ok(Response::new().add_submessage(SubMsg {
-        id: INSTANTIATE_REPLY_ID,
-        msg: CosmosMsg::Wasm(WasmMsg::Instantiate {
-            admin: None,
-            code_id: 1,
-            msg: to_binary(&Cw20InstantiateMsg {
-                name: "name".to_string(),
-                symbol: "symbol".to_string(),
-                decimals: 6,
-                initial_balances,
-                mint: None,
-                marketing: None,
+    Ok(Response::new()
+        .add_submessage(SubMsg {
+            id: INSTANTIATE_REPLY_ID,
+            msg: CosmosMsg::Wasm(WasmMsg::Instantiate {
+                admin: None,
+                code_id: 1,
+                msg: to_binary(&Cw20InstantiateMsg {
+                    name: "name".to_string(),
+                    symbol: "symbol".to_string(),
+                    decimals: 6,
+                    initial_balances,
+                    mint: None,
+                    marketing: None,
+                })?,
+                funds: vec![],
+                label: "label".to_string(),
+            }),
+            gas_limit: None,
+            reply_on: ReplyOn::Success,
+        })
+        .add_submessage(SubMsg::new(WasmMsg::Execute {
+            contract_addr: collection.to_string(),
+            msg: to_binary(&Cw721ExecuteMsg::<Empty, Empty>::TransferNft {
+                recipient: env.contract.address.clone().to_string(),
+                token_id: token_id.to_string(),
             })?,
             funds: vec![],
-            label: "label".to_string(),
-        }),
-        gas_limit: None,
-        reply_on: ReplyOn::Success,
-    }))
+        }))
+    )
+
 }
 
 // Reply callback triggered from cw721 contract instantiation
@@ -167,19 +178,50 @@ pub fn getCw20Address(
     })
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use cosmwasm_std::{
         testing::{mock_dependencies, mock_env, mock_info, MockApi, MockStorage},
-        Addr, Empty,
+        Addr, Empty, Api,
     };
     use cw20::Cw20QueryMsg;
     use cw721::Cw721QueryMsg;
-    use cw721::NumTokensResponse;
+    use cw721::{NumTokensResponse, OwnerOfResponse};
     use cw721::{Cw721Query, Expiration};
     use cw721_base::{Cw721Contract, Extension};
     use cw_multi_test::{App, BankKeeper, Contract, ContractWrapper, Executor};
+
+
+    pub fn nft_owner_of (router: &mut App, collection: String, token_id: String) -> String {
+        let msg = Cw721QueryMsg::OwnerOf { token_id, include_expired: None };
+        let res: OwnerOfResponse = router
+            .wrap()
+            .query_wasm_smart(collection, &msg)
+            .unwrap();
+        return res.owner;
+    }
+
+    pub fn nft_total (router: &mut App, collection: String) -> u64 {
+        let msg = Cw721QueryMsg::NumTokens {};
+        let res: NumTokensResponse = router
+            .wrap()
+            .query_wasm_smart(collection, &msg)
+            .unwrap();
+        return res.count;
+    }
+
+    pub fn token_balance (router: &mut App, token: String, user: String) -> Uint128 {
+        let msg = Cw20QueryMsg::Balance {
+            address: user.to_string(),
+        };
+        let res: cw20::BalanceResponse = router
+            .wrap()
+            .query_wasm_smart(token.to_string(), &msg)
+            .unwrap();
+        res.balance
+    }
 
     pub fn contract_cw721() -> Box<dyn Contract<Empty>> {
         let contract = ContractWrapper::new(
@@ -200,35 +242,35 @@ mod tests {
     }
 
     pub fn contract_fractionalizer() -> Box<dyn Contract<Empty>> {
-        let contract = ContractWrapper::new(execute, instantiate, query).with_reply(reply);
+        let contract = ContractWrapper::new(
+            execute, 
+            instantiate, 
+            query
+        ).with_reply(reply);
         Box::new(contract)
     }
 
-    #[test]
-    fn test_s() {
+    struct World {
+        deployer_address: Addr,
+        user_one: Addr,
+        user_two: Addr,
+        nft_address: Addr,
+        fractionalizer_address: Addr,
+    }
+
+    fn setup (router: &mut App) -> World {
         let deployer = mock_info("deployer", &[]);
 
         let mut deps = mock_dependencies();
         let env = mock_env();
-        let owner = Addr::unchecked("owner");
-
-        fn mock_app() -> App {
-            let env = mock_env();
-            let api = Box::new(MockApi::default());
-            let bank = BankKeeper::new();
-
-            // App::new(api, env.block, bank, Box::new(MockStorage::new()))
-            App::new(|a, b, c| {})
-        }
 
         let user_one = mock_info("user_one", &[]);
         let user_two = mock_info("user_two", &[]);
 
-        let mut router = mock_app();
+        // CW20
+        router.store_code(contract_cw20());
 
-        let cw20_contract_code_id = router.store_code(contract_cw20());
-
-        // deploy NFT
+        // NFT
         let contract_code_id = router.store_code(contract_cw721());
         let msg = Cw721InstantiateMsg {
             minter: deployer.sender.clone().into_string(),
@@ -236,109 +278,138 @@ mod tests {
             symbol: "MOCK".to_string(),
         };
         let nft_address = router
-            .instantiate_contract(contract_code_id, owner.clone(), &msg, &[], "counter", None)
+            .instantiate_contract(contract_code_id, deployer.clone().sender, &msg, &[], "counter", None)
             .unwrap();
 
-        // deploy Fractionalizer
+        // Fractionalizer
         let contract_code_id = router.store_code(contract_fractionalizer());
         let msg = InstantiateMsg {};
         let fractionalizer_address = router
-            .instantiate_contract(contract_code_id, owner.clone(), &msg, &[], "counter", None)
+            .instantiate_contract(contract_code_id, deployer.clone().sender, &msg, &[], "counter", None)
             .unwrap();
+
+        return World {
+            deployer_address: deployer.sender,
+            fractionalizer_address: fractionalizer_address,
+            nft_address: deps.api.addr_validate(&nft_address.to_string()).unwrap(),
+            user_one: user_one.sender,
+            user_two: user_two.sender,
+        }
+
+    }
+
+     fn mock_app() -> App {
+        let env = mock_env();
+        let api = Box::new(MockApi::default());
+        let bank = BankKeeper::new();
+
+        // App::new(api, env.block, bank, Box::new(MockStorage::new()))
+        App::new(|a, b, c| {})
+    }
+
+     #[test]
+    fn test_setup() {
+        let router = &mut mock_app();
+        let world = setup(router);
 
         let msg = Cw721QueryMsg::NumTokens {};
         let res: NumTokensResponse = router
             .wrap()
-            .query_wasm_smart(nft_address.clone(), &msg)
+            .query_wasm_smart(world.nft_address, &msg)
             .unwrap();
 
         assert_eq!(0, res.count);
 
+        let msg = QueryMsg::GetCount {};
+        let res: GetCountResponse = router
+            .wrap()
+            .query_wasm_smart(world.fractionalizer_address, &msg)
+            .unwrap();
+        assert_eq!(res.count, 0);
+    }
+
+    #[test]
+    fn test_fractionalize() {
+        let router = &mut mock_app();
+        let w = setup(router);
+
+        // mint & approve NFT
         let token_id = "petrify".to_string();
         let token_uri = "https://www.merriam-webster.com/dictionary/petrify".to_string();
-
         let mint_msg = Cw721ExecuteMsg::Mint::<_, Extension>(MintMsg::<Extension> {
             token_id: token_id.clone(),
-            owner: deployer.clone().sender.to_string(),
+            owner: w.deployer_address.clone().to_string(),
             token_uri: Some(token_uri.clone()),
             extension: None,
         });
         let _ = router
-            .execute_contract(deployer.sender.clone(), nft_address.clone(), &mint_msg, &[])
+            .execute_contract(w.deployer_address.clone(), w.nft_address.clone(), &mint_msg, &[])
             .unwrap();
 
-        let msg = Cw721QueryMsg::NumTokens {};
-        let res: NumTokensResponse = router
-            .wrap()
-            .query_wasm_smart(nft_address.clone(), &msg)
-            .unwrap();
-        assert_eq!(1, res.count);
+        let num_tokens = nft_total(router, w.nft_address.clone().to_string());
+        assert_eq!(1, num_tokens);
+
+        let owner_of = nft_owner_of(router, w.nft_address.clone().to_string(), token_id.to_string());
+        assert_eq!(owner_of, w.deployer_address.clone().to_string());
 
         let msg = Cw721ExecuteMsg::<Empty, Empty>::Approve {
-            spender: fractionalizer_address.clone().to_string(),
+            spender: w.fractionalizer_address.clone().to_string(),
             token_id: token_id.clone(),
             expires: None,
         };
         let _ = router
-            .execute_contract(deployer.sender.clone(), nft_address.clone(), &msg, &[])
+            .execute_contract(w.deployer_address.clone(), w.nft_address.clone(), &msg, &[])
             .unwrap();
 
-        // start
-        let msg = QueryMsg::GetCount {};
-        let res: GetCountResponse = router
-            .wrap()
-            .query_wasm_smart(fractionalizer_address.clone(), &msg)
-            .unwrap();
-        assert_eq!(res.count, 0);
-
+        // fractionalize
         let owners = vec![
             Cw20Coin {
-                address: user_one.sender.clone().to_string(),
+                address: w.user_one.clone().to_string(),
                 amount: Uint128::from(1u128),
             },
             Cw20Coin {
-                address: user_two.sender.clone().to_string(),
+                address: w.user_two.clone().to_string(),
                 amount: Uint128::from(2u128),
             },
         ];
         let msg = ExecuteMsg::Fractionalise {
-            address: nft_address.clone().to_string(),
+            address: w.nft_address.clone().to_string(),
             token_id: token_id.clone(),
             owners,
         };
         router
             .execute_contract(
-                deployer.sender.clone(),
-                fractionalizer_address.clone(),
+                w.deployer_address.clone(),
+                w.fractionalizer_address.clone(),
                 &msg,
                 &[],
             )
             .unwrap();
-
-        let msg = QueryMsg::GetCw20Address {
-            address: nft_address.clone().to_string(),
-            token_id: token_id.clone().to_string(),
-        };
-        let address_res: GetCw20AddressResponse = router
+        let cw20_address: GetCw20AddressResponse = router
             .wrap()
-            .query_wasm_smart(fractionalizer_address.clone(), &msg)
+            .query_wasm_smart(w.fractionalizer_address.clone(), &QueryMsg::GetCw20Address {
+                address: w.nft_address.clone().to_string(),
+                token_id: token_id.clone().to_string(),
+            })
             .unwrap();
 
-        let msg = Cw20QueryMsg::Balance {
-            address: user_one.sender.clone().to_string(),
-        };
-        let res: cw20::BalanceResponse = router
-            .wrap()
-            .query_wasm_smart(address_res.address.clone(), &msg)
-            .unwrap();
-        assert_eq!(res.balance, Uint128::from(1u128));
-        let msg = Cw20QueryMsg::Balance {
-            address: user_two.sender.clone().to_string(),
-        };
-        let res: cw20::BalanceResponse = router
-            .wrap()
-            .query_wasm_smart(address_res.address.clone(), &msg)
-            .unwrap();
-        assert_eq!(res.balance, Uint128::from(2u128));
+        // assertions
+        let owner_of = nft_owner_of(router, w.nft_address.clone().to_string(), token_id.to_string());
+        assert_eq!(owner_of, w.fractionalizer_address.clone().to_string());
+
+        let bal = token_balance(router, cw20_address.address.clone(), w.user_one.clone().to_string());
+        assert_eq!(bal, Uint128::from(1u128));
+        
+        let bal = token_balance(router, cw20_address.address, w.user_two.to_string());
+        assert_eq!(bal, Uint128::from(2u128));
+    }
+
+
+    fn test_unfractionalize () {
+
+    }
+
+    fn test_try_unfractionalize_without_all_pieces () {
+
     }
 }

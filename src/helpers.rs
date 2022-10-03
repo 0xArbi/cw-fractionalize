@@ -1,3 +1,4 @@
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -8,10 +9,13 @@ use cosmwasm_std::{
 use crate::msg::{ExecuteMsg, GetCountResponse, QueryMsg};
 use cw_utils::parse_reply_instantiate_data;
 
+use cw721::Cw721QueryMsg;
+
 /// CwTemplateContract is a wrapper around Addr that provides a lot of helpers
 /// for working with this.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct CwTemplateContract(pub Addr);
+
 
 impl CwTemplateContract {
     pub fn addr(&self) -> Addr {
