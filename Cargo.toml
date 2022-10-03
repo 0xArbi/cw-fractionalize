@@ -57,6 +57,7 @@ schemars = "0.8.8"
 serde = { version = "1.0.137", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.31" }
 protobuf = { version = "2", features = ["with-bytes"] }
+anyhow = "1.0.65"
 
 [dev-dependencies]
 cw-multi-test = "0.13.2"

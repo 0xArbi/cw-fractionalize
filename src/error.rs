@@ -1,7 +1,7 @@
 use cosmwasm_std::StdError;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum ContractError {
     #[error("{0}")]
     Std(#[from] StdError),
@@ -14,6 +14,12 @@ pub enum ContractError {
 
     #[error("Already fractionalized")]
     Exists {},
+
+    #[error("Insufficient funds")]
+    InsufficientFunds {},
+
+    #[error("Not fractionalized")]
+    NotFractionalized {},
 
     #[error("Custom Error val: {val:?}")]
     CustomError { val: String },

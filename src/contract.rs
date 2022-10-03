@@ -3,26 +3,27 @@ use crate::response::MsgInstantiateContractResponse;
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Binary, ContractResult, Deps, DepsMut, Env, Event, MessageInfo, Order, Reply,
-    ReplyOn, Response, StdError, StdResult, Uint128, Querier, from_binary,
+    ReplyOn, Response, StdError, StdResult, Uint128, Querier, from_binary, Addr, OverflowError, OverflowOperation
 };
 use cw2::set_contract_version;
+use cw721::Cw721ReceiveMsg;
 use protobuf::Message;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, GetCountResponse, GetCw20AddressResponse, InstantiateMsg, QueryMsg, ReceiveMsg};
-use crate::state::{Config, CONFIG, STATE};
+use crate::msg::{ExecuteMsg, GetCw20AddressResponse, InstantiateMsg, QueryMsg, ReceiveMsg};
+use crate::state::{Config, CONFIG, NFT_CW20, CW20_NFT};
 use cw20::{Cw20Coin, Logo, MinterResponse, Cw20Contract, Cw20ReceiveMsg, };
 use cw20_base::contract::instantiate as instantiateCw20;
 use cw20_base::msg::InstantiateMsg as Cw20InstantiateMsg;
 use cw20_base::msg::ExecuteMsg as Cw20ExecuteMsg;
+use cw20_base::ContractError as Cw20ContractError;
 use cw721_base::entry::instantiate as cw721instantiate;
 use cw721_base::helpers::Cw721Contract as Cw721ContractHelper;
 use cw721_base::msg::{
-    ExecuteMsg as Cw721ExecuteMsg, InstantiateMsg as Cw721InstantiateMsg, MintMsg,
+    ExecuteMsg as Cw721ExecuteMsg, InstantiateMsg as Cw721InstantiateMsg, MintMsg, 
 };
 use cw721_base::Cw721Contract;
 use sg721::CollectionInfo;
-use sg_std::StargazeMsgWrapper;
 use std::marker::PhantomData;
 
 use cosmwasm_std::{CosmosMsg, Empty, SubMsg, WasmMsg};
@@ -53,42 +54,18 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Fractionalize {
-            address,
-            token_id,
-            owners,
-        } => fractionalize(deps, info, env, address, token_id, owners),
-        ExecuteMsg::Receive(msg) => handle_receive(deps, info, env, msg),
+        ExecuteMsg::ReceiveNft(msg) => handle_fractionalize(deps, info, msg),
+        ExecuteMsg::Receive(msg) => handle_unfractionalize(deps, info, env, msg),
     }
 }
 
 pub fn fractionalize(
     deps: DepsMut,
-    info: MessageInfo,
-    env: Env,
-    collection: String,
+    collection: Addr,
     token_id: String,
     initial_balances: Vec<Cw20Coin>,
 ) -> Result<Response, ContractError> {
-    let collection_address = deps.api.addr_validate(&collection).unwrap();
-    let nft =
-        Cw721ContractHelper::<Empty, Empty>(collection_address.clone(), PhantomData, PhantomData);
-
-    let owner = nft.owner_of(&deps.querier, token_id.clone(), false)?.owner;
-    if owner != info.sender.to_string() {
-        return Err(ContractError::Unauthorized {});
-    }
-
-    let _ = nft
-        .approval(
-            &deps.querier,
-            token_id.clone(),
-            env.contract.address.to_string(),
-            None,
-        )?
-        .approval;
-
-    let exists = STATE.has(deps.storage, (collection_address.clone(), token_id.clone()));
+    let exists = NFT_CW20.has(deps.storage, (collection.clone(), token_id.clone()));
     if exists {
         return Err(ContractError::Exists {});
     }
@@ -96,7 +73,7 @@ pub fn fractionalize(
     CONFIG.save(
         deps.storage,
         &Config {
-            last_nft_fractionalized: (collection_address.clone(), token_id.clone()),
+            last_nft_fractionalized: (collection.clone(), token_id.clone()),
         },
     );
 
@@ -120,19 +97,10 @@ pub fn fractionalize(
             gas_limit: None,
             reply_on: ReplyOn::Success,
         })
-        .add_submessage(SubMsg::new(WasmMsg::Execute {
-            contract_addr: collection.to_string(),
-            msg: to_binary(&Cw721ExecuteMsg::<Empty, Empty>::TransferNft {
-                recipient: env.contract.address.clone().to_string(),
-                token_id: token_id.to_string(),
-            })?,
-            funds: vec![],
-        }))
     )
-
 }
 
-pub fn handle_receive(
+pub fn handle_unfractionalize(
     deps: DepsMut,
     info: MessageInfo,
     env: Env,
@@ -140,42 +108,52 @@ pub fn handle_receive(
 ) -> Result<Response, ContractError> {
     let msg: ReceiveMsg = from_binary(&wrapped.msg)?;
     match msg {
-        ReceiveMsg::Unfractionalize { address, token_id, recipient } => unfractionalize(deps, info, env, address, token_id, recipient, wrapped.amount),
+        ReceiveMsg::Unfractionalize { recipient } => unfractionalize(deps, info.sender, recipient, wrapped.amount),
+        _ => Err(ContractError::Unauthorized {}),
+    }
+}
+
+pub fn handle_fractionalize(
+    deps: DepsMut,
+    info: MessageInfo,
+    wrapped: Cw721ReceiveMsg,
+) -> Result<Response, ContractError> {
+    let msg: ReceiveMsg = from_binary(&wrapped.msg)?;
+    match msg {
+        ReceiveMsg::Fractionalize { owners } => fractionalize(deps, info.sender, wrapped.token_id, owners),
+        _ => Err(ContractError::Unauthorized {}),
     }
 }
 
 pub fn unfractionalize (
     deps: DepsMut, 
-    info: MessageInfo, 
-    env: Env, 
-    collection: String, 
-    token_id: String, 
+    cw20_address: Addr, 
     recipient: String,
     amount: Uint128,
 ) -> Result<Response, ContractError> {
-    let collection_address = deps.api.addr_validate(&collection).unwrap();
-    let nft =
-        Cw721ContractHelper::<Empty, Empty>(collection_address.clone(), PhantomData, PhantomData);
-    let owner = nft.owner_of(&deps.querier, token_id.clone(), false)?.owner;
-    if owner != env.contract.address.to_string() {
-        return Err(ContractError::Unauthorized {});
+    let data = CW20_NFT.may_load(deps.storage, cw20_address.to_string())?;
+    if data.is_none() {
+        return Err(ContractError::NotFractionalized {});
     }
 
-    let cw20 = STATE.load(deps.storage, (collection_address.clone(), token_id.clone())).unwrap();
+    let (nft_address, token_id) = data.unwrap();
+
     let cw20_info: cw20::TokenInfoResponse = deps.querier.query_wasm_smart(
-        cw20.clone(),
-        &cw20_base::msg::QueryMsg::TokenInfo {
-        },
+        cw20_address.clone(),
+        &cw20_base::msg::QueryMsg::TokenInfo {},
     )?;
     if amount != cw20_info.total_supply {
-        return Err(ContractError::Unauthorized {});
+        return Err(ContractError::InsufficientFunds {});
     }
+
+    println!("HIERE");
     
-    STATE.remove(deps.storage, (collection_address.clone(), token_id.clone()));
+    NFT_CW20.remove(deps.storage, (nft_address.clone(), token_id.clone()));
+    CW20_NFT.remove(deps.storage, cw20_address.clone().to_string());
 
     Ok(Response::new()
         .add_submessage(SubMsg::new(WasmMsg::Execute {
-            contract_addr: collection.to_string(),
+            contract_addr: nft_address.to_string(),
             msg: to_binary(&Cw721ExecuteMsg::<Empty, Empty>::TransferNft {
                 recipient,
                 token_id: token_id.to_string(),
@@ -183,7 +161,7 @@ pub fn unfractionalize (
             funds: vec![],
         }))
         .add_submessage(SubMsg::new(WasmMsg::Execute {
-            contract_addr: cw20,
+            contract_addr: cw20_address.to_string(),
             msg: to_binary(&Cw20ExecuteMsg::Burn { 
                 amount: cw20_info.total_supply
             })?,
@@ -205,7 +183,9 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
 
     let config = CONFIG.load(deps.storage).unwrap();
     let (collection_address, token_id) = config.last_nft_fractionalized;
-    STATE.save(deps.storage, (collection_address, token_id), &cw20_address);
+
+    NFT_CW20.save(deps.storage, (collection_address.clone(), token_id.clone()), &cw20_address.clone());
+    CW20_NFT.save(deps.storage, cw20_address, &(collection_address, token_id));
 
     Ok(Response::new())
 }
@@ -213,19 +193,10 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
-        QueryMsg::GetCount {} => to_binary(&count(deps)?),
         QueryMsg::GetCw20Address { address, token_id } => {
             to_binary(&getCw20Address(deps, address, token_id)?)
         }
     }
-}
-
-pub fn count(deps: Deps) -> StdResult<GetCountResponse> {
-    let polls = STATE.range(deps.storage, None, None, Order::Ascending);
-    let count = polls.count();
-    Ok(GetCountResponse {
-        count: count as i32,
-    })
 }
 
 pub fn getCw20Address(
@@ -234,7 +205,7 @@ pub fn getCw20Address(
     token_id: String,
 ) -> StdResult<GetCw20AddressResponse> {
     let nft_address = deps.api.addr_validate(&address).unwrap();
-    let cw20_address = STATE.load(deps.storage, (nft_address, token_id)).unwrap();
+    let cw20_address = NFT_CW20.load(deps.storage, (nft_address, token_id)).unwrap();
 
     Ok(GetCw20AddressResponse {
         address: cw20_address,
@@ -244,6 +215,8 @@ pub fn getCw20Address(
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Sub;
+
     use super::*;
     use cosmwasm_std::{
         testing::{mock_dependencies, mock_env, mock_info, MockApi, MockStorage, MockQuerier},
@@ -254,7 +227,7 @@ mod tests {
     use cw721::{NumTokensResponse, OwnerOfResponse};
     use cw721::{Cw721Query, Expiration};
     use cw721_base::{Cw721Contract, Extension};
-    use cw_multi_test::{App, BankKeeper, Contract, ContractWrapper, Executor};
+    use cw_multi_test::{App, BankKeeper, Contract, ContractWrapper, Executor, AppResponse};
 
 
     pub fn nft_owner_of (router: &mut App, collection: String, token_id: String) -> String {
@@ -331,15 +304,29 @@ mod tests {
     }
 
     pub fn fractionalize (router: &mut App, sender: Addr, fractionalizer_address: Addr, collection: Addr, token_id: String, owners: Vec<Cw20Coin>) {
-        let msg = ExecuteMsg::Fractionalize {
-            address: collection.to_string(),
-            token_id,
-            owners,
+        let msg = Cw721ExecuteMsg::<Empty, Empty>::SendNft { 
+            contract: fractionalizer_address.clone().to_string(), 
+            token_id: token_id.clone(),
+            msg: to_binary(&ReceiveMsg::Fractionalize { owners }).unwrap(),
         };
         router
-            .execute_contract(sender, fractionalizer_address, &msg, &[])
+            .execute_contract(sender, collection, &msg, &[])
             .unwrap();
     }
+
+    pub fn unfractionalize (router: &mut App, sender: Addr, fractionalizer_address: Addr, cw20_address: Addr, amount: Uint128) -> Result<AppResponse, anyhow::Error> {
+        let msg = Cw20ExecuteMsg::Send { 
+            contract: fractionalizer_address.clone().to_string(), 
+            amount, 
+            msg: to_binary(&ReceiveMsg::Unfractionalize { 
+                recipient: sender.clone().to_string(),
+            }).unwrap(),
+        };
+        
+        router
+            .execute_contract(sender.clone(), cw20_address.clone(), &msg, &[])
+    }
+
 
     pub fn contract_cw721() -> Box<dyn Contract<Empty>> {
         let contract = ContractWrapper::new(
@@ -443,13 +430,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(0, res.count);
-
-        let msg = QueryMsg::GetCount {};
-        let res: GetCountResponse = router
-            .wrap()
-            .query_wasm_smart(world.fractionalizer_address, &msg)
-            .unwrap();
-        assert_eq!(res.count, 0);
     }
 
     #[test]
@@ -528,30 +508,11 @@ mod tests {
         let bal = token_balance(router, cw20.clone(), w.user_one.clone().to_string());
         assert_eq!(bal, Uint128::from(3u128));
 
-        let msg = Cw20ExecuteMsg::Send { 
-            contract: w.fractionalizer_address.clone().to_string(), 
-            amount: bal, 
-            msg: to_binary(&ReceiveMsg::Unfractionalize { 
-                address: w.nft_address.clone().to_string(), 
-                token_id: token_id.clone(),
-                recipient: w.user_one.clone().to_string(),
-            }).unwrap(),
-        };
-        let _ = router
-            .execute_contract(w.user_one.clone(), cw20_address.clone(), &msg, &[])
-            .unwrap();
-        let msg = Cw20ExecuteMsg::Send { 
-            contract: w.fractionalizer_address.clone().to_string(), 
-            amount: Uint128::from(1u128), 
-            msg: to_binary(&ReceiveMsg::Unfractionalize { 
-                address: w.nft_address.clone().to_string(), 
-                token_id: token_id.clone(),
-                recipient: w.user_one.clone().to_string(),
-            }).unwrap(),
-        };
-        let _ = router
-            .execute_contract(w.user_one.clone(), cw20_address.clone(), &msg, &[])
-            .unwrap_err();
+        let err = unfractionalize(router, w.user_one.clone(), w.fractionalizer_address.clone(), cw20_address.clone(), Uint128::from(1u128)).unwrap_err();
+        assert_eq!(err.downcast::<ContractError>().unwrap(), ContractError::InsufficientFunds {});
+        unfractionalize(router, w.user_one.clone(), w.fractionalizer_address.clone(), cw20_address.clone(), bal).unwrap();
+        unfractionalize(router, w.user_one.clone(), w.fractionalizer_address.clone(), cw20_address.clone(), bal).unwrap_err();
+        // TODO: figure out how to assert this error
 
         // assertions
         let owner_of = nft_owner_of(router, w.nft_address.clone().to_string(), token_id.to_string());
