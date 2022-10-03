@@ -1,17 +1,29 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cw20::Cw20Coin;
+use cw20::{Cw20Coin, Cw20ReceiveMsg};
 
 #[cw_serde]
 pub struct InstantiateMsg {}
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    Fractionalise {
+    Fractionalize {
         address: String,
         token_id: String,
         owners: Vec<Cw20Coin>,
     },
+    Receive(Cw20ReceiveMsg),
+
 }
+
+#[cw_serde]
+pub enum ReceiveMsg {
+    Unfractionalize { 
+        address: String,
+        token_id: String,
+        recipient: String,
+     },
+}
+
 
 #[cw_serde]
 #[derive(QueryResponses)]
