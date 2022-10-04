@@ -52,6 +52,8 @@ pub fn fractionalize(
     collection: Addr,
     token_id: String,
     initial_balances: Vec<Cw20Coin>,
+    name: String,
+    symbol: String
 ) -> Result<Response, ContractError> {
     let exists = NFT_CW20.has(deps.storage, (collection.clone(), token_id.clone()));
     if exists {
@@ -71,8 +73,8 @@ pub fn fractionalize(
             admin: None,
             code_id: 1,
             msg: to_binary(&Cw20InstantiateMsg {
-                name: "name".to_string(),
-                symbol: "symbol".to_string(),
+                name: name.to_string(),
+                symbol: symbol.to_string(),
                 decimals: 6,
                 initial_balances,
                 mint: None,
@@ -108,8 +110,8 @@ pub fn handle_fractionalize(
 ) -> Result<Response, ContractError> {
     let msg: ReceiveMsg = from_binary(&wrapped.msg)?;
     match msg {
-        ReceiveMsg::Fractionalize { owners } => {
-            fractionalize(deps, info.sender, wrapped.token_id, owners)
+        ReceiveMsg::Fractionalize { owners, name, symbol } => {
+            fractionalize(deps, info.sender, wrapped.token_id, owners, name, symbol)
         }
         _ => Err(ContractError::Unauthorized {}),
     }

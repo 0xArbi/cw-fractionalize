@@ -13,7 +13,7 @@ pub enum ExecuteMsg {
 
 #[cw_serde]
 pub enum ReceiveMsg {
-    Fractionalize { owners: Vec<Cw20Coin> },
+    Fractionalize { owners: Vec<Cw20Coin>, name: String, symbol: String },
     Unfractionalize { recipient: String },
 }
 

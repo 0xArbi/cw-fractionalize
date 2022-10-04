@@ -111,7 +111,11 @@ pub fn fractionalize(
     let msg = Cw721ExecuteMsg::<Empty, Empty>::SendNft {
         contract: fractionalizer_address.clone().to_string(),
         token_id: token_id.clone(),
-        msg: to_binary(&ReceiveMsg::Fractionalize { owners }).unwrap(),
+        msg: to_binary(&ReceiveMsg::Fractionalize { 
+            owners, 
+            name: "name".to_string(), 
+            symbol: "symbol".to_string(),
+        }).unwrap(),
     };
     router
         .execute_contract(sender, collection, &msg, &[])
@@ -194,7 +198,7 @@ fn setup(router: &mut App) -> World {
             deployer.clone().sender,
             &msg,
             &[],
-            "counter",
+            "nft",
             None,
         )
         .unwrap();
@@ -208,7 +212,7 @@ fn setup(router: &mut App) -> World {
             deployer.clone().sender,
             &msg,
             &[],
-            "counter",
+            "fractionalizer",
             None,
         )
         .unwrap();
