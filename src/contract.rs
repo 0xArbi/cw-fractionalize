@@ -1,20 +1,21 @@
-use crate::response::MsgInstantiateContractResponse;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     from_binary, to_binary, Addr, Binary, CosmosMsg, Deps, DepsMut, Empty, Env, MessageInfo, Reply,
     ReplyOn, Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
 };
+
 use cw2::set_contract_version;
 use cw20::{Cw20Coin, Cw20ReceiveMsg};
 use cw721::Cw721ReceiveMsg;
+use cw20_base::msg::{ExecuteMsg as Cw20ExecuteMsg, InstantiateMsg as Cw20InstantiateMsg};
+use cw721_base::msg::ExecuteMsg as Cw721ExecuteMsg;
 use protobuf::Message;
 
+use crate::response::MsgInstantiateContractResponse;
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, GetCw20AddressResponse, InstantiateMsg, QueryMsg, ReceiveMsg};
 use crate::state::{Config, CONFIG, CW20_NFT, NFT_CW20};
-use cw20_base::msg::{ExecuteMsg as Cw20ExecuteMsg, InstantiateMsg as Cw20InstantiateMsg};
-use cw721_base::msg::ExecuteMsg as Cw721ExecuteMsg;
 
 const CONTRACT_NAME: &str = "crates.io:cw-fractionalize";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");

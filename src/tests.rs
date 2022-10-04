@@ -1,26 +1,22 @@
 use cosmwasm_std::{
     to_binary, Addr, Api, Empty, Uint128,
+        testing::{mock_dependencies, mock_info, MockApi, MockQuerier},
+    MemoryStorage, OwnedDeps,
+
 };
 
 use cw20::{Cw20Coin};
-
-
-use crate::contract::{execute, instantiate, query, reply};
-use crate::error::ContractError;
-use crate::msg::{GetCw20AddressResponse, InstantiateMsg, QueryMsg, ReceiveMsg};
-
 use cw20_base::msg::{ExecuteMsg as Cw20ExecuteMsg};
 use cw721_base::msg::ExecuteMsg as Cw721ExecuteMsg;
-
-use cosmwasm_std::{
-    testing::{mock_dependencies, mock_info, MockApi, MockQuerier},
-    MemoryStorage, OwnedDeps,
-};
 use cw20::Cw20QueryMsg;
 use cw721::Cw721QueryMsg;
 use cw721::{NumTokensResponse, OwnerOfResponse};
 use cw721_base::{Extension, InstantiateMsg as Cw721InstantiateMsg, MintMsg};
 use cw_multi_test::{App, AppResponse, Contract, ContractWrapper, Executor};
+
+use crate::contract::{execute, instantiate, query, reply};
+use crate::error::ContractError;
+use crate::msg::{GetCw20AddressResponse, InstantiateMsg, QueryMsg, ReceiveMsg};
 
 pub fn nft_owner_of(router: &mut App, collection: String, token_id: String) -> String {
     let msg = Cw721QueryMsg::OwnerOf {
