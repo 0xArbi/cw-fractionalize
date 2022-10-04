@@ -1,20 +1,19 @@
 use cosmwasm_std::{
-    from_binary, to_binary, Addr, Api, Binary, CosmosMsg, Deps, DepsMut, Empty, Env, MessageInfo,
-    Reply, ReplyOn, Response, StdError, StdResult, SubMsg, Uint128, WasmMsg,
+    to_binary, Addr, Api, Empty, Uint128,
 };
-use cw2::set_contract_version;
-use cw20::{Cw20Coin, Cw20ReceiveMsg};
-use cw721::Cw721ReceiveMsg;
+
+use cw20::{Cw20Coin};
+
 
 use crate::contract::{execute, instantiate, query, reply};
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, GetCw20AddressResponse, InstantiateMsg, QueryMsg, ReceiveMsg};
-use crate::state::{Config, CONFIG, CW20_NFT, NFT_CW20};
-use cw20_base::msg::{ExecuteMsg as Cw20ExecuteMsg, InstantiateMsg as Cw20InstantiateMsg};
+use crate::msg::{GetCw20AddressResponse, InstantiateMsg, QueryMsg, ReceiveMsg};
+
+use cw20_base::msg::{ExecuteMsg as Cw20ExecuteMsg};
 use cw721_base::msg::ExecuteMsg as Cw721ExecuteMsg;
 
 use cosmwasm_std::{
-    testing::{mock_dependencies, mock_env, mock_info, MockApi, MockQuerier},
+    testing::{mock_dependencies, mock_info, MockApi, MockQuerier},
     MemoryStorage, OwnedDeps,
 };
 use cw20::Cw20QueryMsg;
@@ -178,7 +177,7 @@ struct World {
 fn setup(router: &mut App) -> World {
     let deployer = mock_info("deployer", &[]);
 
-    let mut deps = mock_dependencies();
+    let deps = mock_dependencies();
 
     let user_one = mock_info("user_one", &[]);
     let user_two = mock_info("user_two", &[]);
@@ -232,7 +231,7 @@ fn setup(router: &mut App) -> World {
 }
 
 fn mock_app() -> App {
-    App::new(|a, b, c| {})
+    App::new(|_a, _b, _c| {})
 }
 
 #[test]
