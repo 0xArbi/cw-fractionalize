@@ -8,4 +8,4 @@ mod response;
 pub use crate::error::ContractError;
 
 #[cfg(test)]
-mod tests;
+mod integration_tests;

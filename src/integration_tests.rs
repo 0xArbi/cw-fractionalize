@@ -1,8 +1,7 @@
 use cosmwasm_std::{
     to_binary, Addr, Api, Empty, Uint128,
-        testing::{mock_dependencies, mock_info, MockApi, MockQuerier},
+    testing::{mock_dependencies, mock_info, MockApi, MockQuerier},
     MemoryStorage, OwnedDeps,
-
 };
 
 use cw20::{Cw20Coin};
