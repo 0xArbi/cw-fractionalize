@@ -16,7 +16,6 @@ use crate::state::{Config, CONFIG, CW20_NFT, NFT_CW20};
 use cw20_base::msg::{ExecuteMsg as Cw20ExecuteMsg, InstantiateMsg as Cw20InstantiateMsg};
 use cw721_base::msg::ExecuteMsg as Cw721ExecuteMsg;
 
-// version info for migration info
 const CONTRACT_NAME: &str = "crates.io:cw-fractionalize";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -26,8 +25,8 @@ const INSTANTIATE_REPLY_ID: u64 = 1;
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
-    info: MessageInfo,
-    msg: InstantiateMsg,
+    _info: MessageInfo,
+    _msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
@@ -61,7 +60,7 @@ pub fn fractionalize(
     CONFIG.save(
         deps.storage,
         &Config {
-            last_nft_fractionalized: (collection.clone(), token_id.clone()),
+            last_nft_fractionalized: (collection, token_id),
         },
     );
 
@@ -136,17 +135,15 @@ pub fn unfractionalize(
         return Err(ContractError::InsufficientFunds {});
     }
 
-    println!("HIERE");
-
     NFT_CW20.remove(deps.storage, (nft_address.clone(), token_id.clone()));
-    CW20_NFT.remove(deps.storage, cw20_address.clone().to_string());
+    CW20_NFT.remove(deps.storage, cw20_address.to_string());
 
     Ok(Response::new()
         .add_submessage(SubMsg::new(WasmMsg::Execute {
             contract_addr: nft_address.to_string(),
             msg: to_binary(&Cw721ExecuteMsg::<Empty, Empty>::TransferNft {
                 recipient,
-                token_id: token_id.to_string(),
+                token_id,
             })?,
             funds: vec![],
         }))
@@ -175,7 +172,7 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
     NFT_CW20.save(
         deps.storage,
         (collection_address.clone(), token_id.clone()),
-        &cw20_address.clone(),
+        &cw20_address,
     );
     CW20_NFT.save(deps.storage, cw20_address, &(collection_address, token_id));
 
@@ -186,12 +183,12 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::GetCw20Address { address, token_id } => {
-            to_binary(&getCw20Address(deps, address, token_id)?)
+            to_binary(&get_cw20_address(deps, address, token_id)?)
         }
     }
 }
 
-pub fn getCw20Address(
+pub fn get_cw20_address(
     deps: Deps,
     address: String,
     token_id: String,
@@ -216,7 +213,7 @@ mod tests {
     use cw20::Cw20QueryMsg;
     use cw721::Cw721QueryMsg;
     use cw721::{NumTokensResponse, OwnerOfResponse};
-    use cw721_base::{Extension};
+    use cw721_base::{Extension, MintMsg, InstantiateMsg as Cw721InstantiateMsg};
     use cw_multi_test::{App, AppResponse, BankKeeper, Contract, ContractWrapper, Executor};
 
     pub fn nft_owner_of(router: &mut App, collection: String, token_id: String) -> String {
@@ -226,12 +223,6 @@ mod tests {
         };
         let res: OwnerOfResponse = router.wrap().query_wasm_smart(collection, &msg).unwrap();
         return res.owner;
-    }
-
-    pub fn nft_total(router: &mut App, collection: Addr) -> u64 {
-        let msg = Cw721QueryMsg::NumTokens {};
-        let res: NumTokensResponse = router.wrap().query_wasm_smart(collection, &msg).unwrap();
-        return res.count;
     }
 
     pub fn token_balance(router: &mut App, token: String, user: String) -> Uint128 {
@@ -387,7 +378,6 @@ mod tests {
         let deployer = mock_info("deployer", &[]);
 
         let mut deps = mock_dependencies();
-        let env = mock_env();
 
         let user_one = mock_info("user_one", &[]);
         let user_two = mock_info("user_two", &[]);
@@ -441,11 +431,6 @@ mod tests {
     }
 
     fn mock_app() -> App {
-        let env = mock_env();
-        let api = Box::new(MockApi::default());
-        let bank = BankKeeper::new();
-
-        // App::new(api, env.block, bank, Box::new(MockStorage::new()))
         App::new(|a, b, c| {})
     }
 
@@ -631,7 +616,7 @@ mod tests {
             router,
             w.user_one.clone(),
             w.fractionalizer_address.clone(),
-            cw20_address.clone(),
+            cw20_address,
             bal,
         )
         .unwrap_err();
@@ -640,12 +625,12 @@ mod tests {
         // assertions
         let owner_of = nft_owner_of(
             router,
-            w.nft_address.clone().to_string(),
-            token_id.to_string(),
+            w.nft_address.to_string(),
+            token_id,
         );
         assert_eq!(owner_of, w.user_one.clone().to_string());
 
-        let bal = token_balance(router, cw20.clone(), w.user_one.clone().to_string());
+        let bal = token_balance(router, cw20.clone(), w.user_one.to_string());
         assert_eq!(bal, Uint128::from(0u128));
 
         let bal = token_balance(router, cw20.clone(), w.user_two.to_string());
