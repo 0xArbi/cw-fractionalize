@@ -24,16 +24,16 @@ pub fn nft_owner_of(router: &mut App, collection: String, token_id: String) -> S
         include_expired: None,
     };
     let res: OwnerOfResponse = router.wrap().query_wasm_smart(collection, &msg).unwrap();
-    return res.owner;
+    res.owner
 }
 
-pub fn token_balance(router: &mut App, token: String, user: String) -> Uint128 {
+pub fn token_balance(router: &mut App, token: String, address: String) -> Uint128 {
     let msg = Cw20QueryMsg::Balance {
-        address: user.to_string(),
+        address,
     };
     let res: cw20::BalanceResponse = router
         .wrap()
-        .query_wasm_smart(token.to_string(), &msg)
+        .query_wasm_smart(token, &msg)
         .unwrap();
     res.balance
 }
@@ -54,13 +54,13 @@ pub fn token_transfer(
 
 pub fn mint_nft(router: &mut App, minter: Addr, collection: Addr, token_id: String, user: Addr) {
     let mint_msg = Cw721ExecuteMsg::Mint::<_, Extension>(MintMsg::<Extension> {
-        token_id: token_id.clone(),
+        token_id,
         owner: user.to_string(),
         token_uri: Some("".to_string()),
         extension: None,
     });
     let _ = router
-        .execute_contract(minter.clone(), collection, &mint_msg, &[])
+        .execute_contract(minter, collection, &mint_msg, &[])
         .unwrap();
 }
 
@@ -73,7 +73,7 @@ pub fn approve_nft(
 ) {
     let msg = Cw721ExecuteMsg::<Empty, Empty>::Approve {
         spender: spender.to_string(),
-        token_id: token_id,
+        token_id,
         expires: None,
     };
     let _ = router
@@ -93,11 +93,11 @@ pub fn get_fractional_address(
             fractionalizer_address,
             &QueryMsg::GetCw20Address {
                 address: collection.to_string(),
-                token_id: token_id.to_string(),
+                token_id,
             },
         )
         .unwrap();
-    return cw20_address.address;
+    cw20_address.address
 }
 
 pub fn fractionalize(
@@ -109,8 +109,8 @@ pub fn fractionalize(
     owners: Vec<Cw20Coin>,
 ) {
     let msg = Cw721ExecuteMsg::<Empty, Empty>::SendNft {
-        contract: fractionalizer_address.clone().to_string(),
-        token_id: token_id.clone(),
+        contract: fractionalizer_address.to_string(),
+        token_id,
         msg: to_binary(&ReceiveMsg::Fractionalize { 
             owners, 
             name: "name".to_string(), 
@@ -130,15 +130,15 @@ pub fn unfractionalize(
     amount: Uint128,
 ) -> Result<AppResponse, anyhow::Error> {
     let msg = Cw20ExecuteMsg::Send {
-        contract: fractionalizer_address.clone().to_string(),
+        contract: fractionalizer_address.to_string(),
         amount,
         msg: to_binary(&ReceiveMsg::Unfractionalize {
-            recipient: sender.clone().to_string(),
+            recipient: sender.to_string(),
         })
         .unwrap(),
     };
 
-    router.execute_contract(sender.clone(), cw20_address.clone(), &msg, &[])
+    router.execute_contract(sender, cw20_address, &msg, &[])
 }
 
 pub fn contract_cw721() -> Box<dyn Contract<Empty>> {
@@ -219,15 +219,15 @@ fn setup(router: &mut App) -> World {
 
     let nft_address = deps.api.addr_validate(&nft_address.to_string()).unwrap();
 
-    return World {
-        deps: deps,
+    World {
+        deps,
 
         deployer_address: deployer.sender,
-        fractionalizer_address: fractionalizer_address,
+        fractionalizer_address,
         nft_address,
         user_one: user_one.sender,
         user_two: user_two.sender,
-    };
+    }
 }
 
 fn mock_app() -> App {
@@ -264,10 +264,10 @@ fn test_mint() {
 
     let owner_of = nft_owner_of(
         router,
-        w.nft_address.clone().to_string(),
-        token_id.to_string(),
+        w.nft_address.to_string(),
+        token_id,
     );
-    assert_eq!(owner_of, w.deployer_address.clone().to_string());
+    assert_eq!(owner_of, w.deployer_address.to_string());
 }
 
 #[test]
@@ -301,11 +301,11 @@ fn test_fractionalize() {
         token_id.clone(),
         vec![
             Cw20Coin {
-                address: w.user_one.clone().to_string(),
+                address: w.user_one.to_string(),
                 amount: Uint128::from(1u128),
             },
             Cw20Coin {
-                address: w.user_two.clone().to_string(),
+                address: w.user_two.to_string(),
                 amount: Uint128::from(2u128),
             },
         ],
@@ -321,12 +321,12 @@ fn test_fractionalize() {
     // assertions
     let owner_of = nft_owner_of(
         router,
-        w.nft_address.clone().to_string(),
-        token_id.to_string(),
+        w.nft_address.to_string(),
+        token_id,
     );
-    assert_eq!(owner_of, w.fractionalizer_address.clone().to_string());
+    assert_eq!(owner_of, w.fractionalizer_address.to_string());
 
-    let bal = token_balance(router, cw20.clone(), w.user_one.clone().to_string());
+    let bal = token_balance(router, cw20.clone(), w.user_one.to_string());
     assert_eq!(bal, Uint128::from(1u128));
 
     let bal = token_balance(router, cw20, w.user_two.to_string());
@@ -364,11 +364,11 @@ fn test_unfractionalize() {
         token_id.clone(),
         vec![
             Cw20Coin {
-                address: w.user_one.clone().to_string(),
+                address: w.user_one.to_string(),
                 amount: Uint128::from(1u128),
             },
             Cw20Coin {
-                address: w.user_two.clone().to_string(),
+                address: w.user_two.to_string(),
                 amount: Uint128::from(2u128),
             },
         ],
@@ -389,7 +389,7 @@ fn test_unfractionalize() {
         w.user_one.clone(),
     );
 
-    let bal = token_balance(router, cw20.clone(), w.user_one.clone().to_string());
+    let bal = token_balance(router, cw20.clone(), w.user_one.to_string());
     assert_eq!(bal, Uint128::from(3u128));
 
     let err = unfractionalize(
@@ -424,7 +424,7 @@ fn test_unfractionalize() {
 
     // assertions
     let owner_of = nft_owner_of(router, w.nft_address.to_string(), token_id);
-    assert_eq!(owner_of, w.user_one.clone().to_string());
+    assert_eq!(owner_of, w.user_one.to_string());
 
     let bal = token_balance(router, cw20.clone(), w.user_one.to_string());
     assert_eq!(bal, Uint128::from(0u128));

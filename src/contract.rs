@@ -60,12 +60,13 @@ pub fn fractionalize(
         return Err(ContractError::Exists {});
     }
 
+    // TODO: is there another way to pass NFT data to reply fn
     CONFIG.save(
         deps.storage,
         &Config {
             last_nft_fractionalized: (collection, token_id),
         },
-    );
+    )?;
 
     Ok(Response::new().add_submessage(SubMsg {
         id: INSTANTIATE_REPLY_ID,
@@ -73,8 +74,8 @@ pub fn fractionalize(
             admin: None,
             code_id: 1,
             msg: to_binary(&Cw20InstantiateMsg {
-                name: name.to_string(),
-                symbol: symbol.to_string(),
+                name,
+                symbol,
                 decimals: 6,
                 initial_balances,
                 mint: None,
@@ -176,8 +177,8 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
         deps.storage,
         (collection_address.clone(), token_id.clone()),
         &cw20_address,
-    );
-    CW20_NFT.save(deps.storage, cw20_address, &(collection_address, token_id));
+    )?;
+    CW20_NFT.save(deps.storage, cw20_address, &(collection_address, token_id))?;
 
     Ok(Response::new())
 }

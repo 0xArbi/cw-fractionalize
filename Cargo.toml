@@ -1,7 +1,9 @@
 [package]
 name = "cw-fractionalize"
-version = "0.1.0"
-authors = []
+version = "0.0.1"
+authors = [
+  "0xArb <0xarbi@proton.me>"
+]
 edition = "2021"
 
 exclude = [
@@ -14,6 +16,7 @@ exclude = [
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+doctest = false
 
 [profile.release]
 opt-level = 3
@@ -36,7 +39,7 @@ library = []
 optimize = """docker run --rm -v "$(pwd)":/code \
   --mount type=volume,source="$(basename "$(pwd)")_cache",target=/code/target \
   --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-  cosmwasm/rust-optimizer:0.12.6
+  cosmwasm/rust-optimizer:0.12.8
 """
 
 [dependencies]
@@ -47,8 +50,6 @@ cw-storage-plus = "0.13.2"
 cw2 = "0.13.2"
 cw721 = "0.15.0"
 cw721-base = "0.15.0"
-sg721 = "0.15.0"
-sg721-base = "0.15.0"
 cw20-base = "0.15.1"
 cw20 = "0.15.1"
 cw-utils = "0.15.1"
