@@ -4,7 +4,7 @@ version = "0.0.1"
 authors = [
   "0xArb <0xarbi@proton.me>"
 ]
-edition = "2021"
+edition = "2018"
 
 exclude = [
   # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
