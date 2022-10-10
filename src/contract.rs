@@ -72,7 +72,7 @@ pub fn fractionalize(
     id: INSTANTIATE_REPLY_ID,
     msg: CosmosMsg::Wasm(WasmMsg::Instantiate {
       admin: None,
-      code_id: 1,
+      code_id: INSTANTIATE_REPLY_ID,
       msg: to_binary(&Cw20InstantiateMsg {
         name,
         symbol,
@@ -82,7 +82,7 @@ pub fn fractionalize(
         marketing: None,
       })?,
       funds: vec![],
-      label: "label".to_string(),
+      label: "fractionalize".to_string(),
     }),
     gas_limit: None,
     reply_on: ReplyOn::Success,
